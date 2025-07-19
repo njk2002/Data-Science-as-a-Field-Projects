@@ -1,0 +1,184 @@
+---
+title: "Covid-19 Data Project"
+author: "anon"
+date: "2025-07-12"
+output: html_document
+---
+
+## Source: https://github.com/CSSEGISandData/COVID-19
+
+# Import and Data Clean Up
+
+```{r setup, message=FALSE, echo=TRUE, warning=FALSE}
+library(tidyverse)
+
+US_cases <- read_csv("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/refs/heads/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_US.csv")
+US_deaths <- read_csv("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/refs/heads/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_US.csv")
+Global_Cases <- read_csv("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/refs/heads/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv")
+Global_Deaths <- read_csv("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/refs/heads/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_global.csv")
+
+US_deaths <- US_deaths %>%
+  select(-iso2)
+
+process_covid_data <- function(dataset) {
+metadata <- dataset[, 1:11]
+dateData <- dataset[, 12:ncol(dataset)]
+
+ColumnNames <- colnames(dateData)
+
+ColumnNamesAsDate <- as.Date(ColumnNames, format = "%m/%d/%y")
+
+if (any(is.na(dateData))) {
+  stop("Dates failed: ", paste(dateData[is.na(dateData)], collapse = ", "))
+}
+
+monthANDyear <- format(ColumnNamesAsDate, "%Y-%m")
+
+fixedMonths <- sapply(unique(monthANDyear), function(month) {
+  columns <- which(monthANDyear == month)
+  rowSums(dateData[, columns, drop=FALSE], na.rm = TRUE)
+})
+
+fixedMonths <- as.data.frame(fixedMonths)
+
+final <- cbind(metadata, fixedMonths)
+
+months <- unique(monthANDyear)
+
+betterlookingdates <- format(as.Date(paste0(months, "-01")), "%b %Y")
+
+colnames(final)[(ncol(metadata) + 1):ncol(final)] <- betterlookingdates
+
+return(final)
+}
+
+US_cases <- process_covid_data(US_cases)
+US_deaths <- process_covid_data(US_deaths)
+
+# split for global and US
+
+process_global_covid_data <- function(dataset) {
+metadata <- dataset[, 1:4]
+dateData <- dataset[, 5:ncol(dataset)]
+
+ColumnNames <- colnames(dateData)
+
+ColumnNamesAsDate <- as.Date(ColumnNames, format = "%m/%d/%y")
+
+if (any(is.na(dateData))) {
+  stop("Dates failed: ", paste(dateData[is.na(dateData)], collapse = ", "))
+}
+
+monthANDyear <- format(ColumnNamesAsDate, "%Y-%m")
+
+fixedMonths <- sapply(unique(monthANDyear), function(month) {
+  columns <- which(monthANDyear == month)
+  rowSums(dateData[, columns, drop=FALSE], na.rm = TRUE)
+})
+
+fixedMonths <- as.data.frame(fixedMonths)
+
+final <- cbind(metadata, fixedMonths)
+
+months <- unique(monthANDyear)
+
+betterlookingdates <- format(as.Date(paste0(months, "-01")), "%b %Y")
+
+colnames(final)[(ncol(metadata) + 1):ncol(final)] <- betterlookingdates
+
+return(final)
+}
+
+Global_Cases <- process_global_covid_data(Global_Cases)
+Global_Deaths <- process_global_covid_data(Global_Deaths)
+
+JustUScasesNumbers <- US_cases %>%
+  select(-UID, -iso2, -iso3, -code3, -FIPS, -Admin2, -Province_State, -Country_Region, -Lat, -Long_, -Combined_Key)
+JustUSdeathsNumbers <- US_deaths %>%
+  select(-UID, -Population, -iso3, -code3, -FIPS, -Admin2, -Province_State, -Country_Region, -Lat, -Long_, -Combined_Key)
+JustGlobalDeathsNumbers <- Global_Deaths %>%
+  select(-`Province/State`, -`Country/Region`, -Lat, -Long)
+JustGlobalCasesNumbers <- Global_Cases %>%
+  select(-`Province/State`, -`Country/Region`, -Lat, -Long)
+```
+#### Here I took the data set and combined the colums to be monthly per year rather than data. This makes the data way easier to work with. I then created four new datasets where they only show the numbers so my functions moving forward were a lot easier. 
+
+# Heat Map to See Where the US Cases Are
+```{r, message=FALSE, echo=TRUE, warning=FALSE}
+
+library(leaflet)
+library(leaflet.extras)
+
+US_cases$Lat <- as.numeric(US_cases$Lat)
+US_cases$Long_ <- as.numeric(US_cases$Long_)
+US_casesGeo <- US_cases[!is.na(US_cases$Lat) & !is.na(US_cases$Long_), ]
+
+leaflet(US_casesGeo) %>%
+  addProviderTiles(providers$CartoDB.Voyager) %>%
+  addHeatmap(
+    lat = ~Lat,
+    lng = ~Long_,
+    blur = 1,
+    max = .01,
+    radius = 5.7,
+    minOpacity = .5
+  )
+
+```
+
+#### This stands out to me because, first off, there is data off the western coast of Africa. There is not American land wehre that data point is. My guess is the geolocation was accidentally altered when inputted. My second stand out was that it's clear the lat's and long's are not over where all covid cases were. I don't think it is a coincidence that every single data point is perfectly spread out even. I'm not saying that they're all inaccurate, but it feels as if they were just adding to paralell each state column. 
+
+# Heat Map for Global Cases
+```{r, message=FALSE, echo=TRUE, warning=FALSE}
+
+library(leaflet)
+library(leaflet.extras)
+
+Global_Cases$Lat <- as.numeric(Global_Cases$Lat)
+Global_Cases$Long <- as.numeric(Global_Cases$Long)
+Global_casesGeo <- Global_Cases[!is.na(Global_Cases$Lat) & !is.na(Global_Cases$Long), ]
+
+leaflet(Global_casesGeo) %>%
+  addProviderTiles(providers$CartoDB.Voyager) %>%
+  addHeatmap(
+    lat = ~Lat,
+    lng = ~Long,
+    blur = 1,
+    max = .01,
+    radius = 5.7,
+    minOpacity = .5
+  )
+
+```
+#### This visualization also helps us further come to a conclusion that the geolocation data within these datasets maybe innacurate for the most part. Some data points show up in random places in the ocean. Once again i don't believe it's completley inaccurate, but it's compelling evidence to make a case for it. 
+
+# Chart Showing Quarterly Deaths in the United States
+```{r, message=FALSE, echo=TRUE, warning=FALSE}
+
+library(ggplot2)
+library(ggrepel)
+library(dplyr)
+
+ValidStates <- c("Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado", "Connecticut", "Delaware", "Florida", "Georgia", "Hawaii", "Idaho", "Illinois", "Indiana", "Iowa", "Kansas", "Kentucky", "Louisiana", "Maine", "Maryland", "Massachusetts", "Michigan", "Minnesota", "Mississippi", "Missouri", "Montana", "Nebraska", "Nevada", "New Hampshire", "New Jersey", "New Mexico", "New York", "North Carolina", "North Dakota", "Ohio", "Oklahoma", "Oregon", "Pennsylvania", "Rhode Island", "South Carolina", "South Dakota", "Tennessee", "Texas", "Utah", "Vermont", "Virginia", "Washington", "West Virginia", "Wisconsin", "Wyoming")
+
+
+US_deaths <- US_deaths %>%
+  filter(Province_State %in% ValidStates) 
+
+StateCounts <- US_deaths %>%
+  mutate(Province_State =  as.character(Province_State)) %>% 
+  count(Province_State) %>% 
+  mutate(
+    percent = n / sum(n),
+    label = paste0(Province_State, " (", sprintf("%.2f", percent * 100), "%)") 
+  )
+
+print(StateCounts)
+
+```
+
+#### This visualization is to see what states had teh most covid deaths in the US and which states had the least amount of deaths in the US. I think overall doing it this way shows a good way to visualize the proportions of each states numbers.
+
+### Conlusion: This project provided a comprehensive visualization of teh COVID19 impact both globally and within the US. By using two heat maps, I was able to effectively communicate the geographic distribution and intensity of cases by regional trends. Focusing on the US, we transformed the dataset to explore not just case counts but also the proportions of deaths by state. This allowed a deeper understanding of where they may have occured most and least to possibly further analyze trends. 
+
+### Bias: The location data may represent a bias in that whoever was collecting or arranging data may have spread the location out evenly in bias because of the possible inaccuracy and making the data seem more dispersed. It's not prevelant as to why the geolocation data is this way, but one could theorize that there could be bias in not having most cases centralized.
